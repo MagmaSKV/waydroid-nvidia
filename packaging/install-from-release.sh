@@ -13,7 +13,7 @@
 #   pkexec ./packaging/install-from-release.sh --local "$PWD" --skip-build   # deploy this checkout
 set -euo pipefail
 
-REPO_URL="https://github.com/CinQwQeggs01/waydroid-nvidia"
+REPO_URL="https://github.com/MagmaSKV/waydroid-nvidia"
 WAYDROID_UPSTREAM="https://github.com/waydroid/waydroid.git"
 PREFIX="/usr/lib/waydroid-nvidia"
 TAG=""
@@ -390,7 +390,7 @@ if [ "$SKIP_BUILD" -eq 0 ] && [ -z "$TAG" ]; then
         TAG=$(git ls-remote --tags --sort=-v:refname "$REPO_URL" | head -1 | sed 's/.*refs\/tags\///')
     else
         # release mode with no tag: use latest release
-        TAG=$(curl -fsSL "https://api.github.com/repos/CinQwQeggs01/waydroid-nvidia/releases/latest" | \
+        TAG=$(curl -fsSL "https://api.github.com/repos/MagmaSKV/waydroid-nvidia/releases/latest" | \
               grep '"tag_name"' | head -1 | sed 's/.*"tag_name": *"//' | sed 's/".*//')
     fi
     [ -n "$TAG" ] || die "could not determine tag (no releases? use --tag or --source)"
