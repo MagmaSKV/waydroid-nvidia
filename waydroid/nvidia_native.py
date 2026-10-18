@@ -165,8 +165,54 @@ import hashlib
 import os
 import re
 
+# HOST_LIBDIR32 defaults to the Debian/Arch path but is only a default: the Fedora multilib layout
+# ships the 32-bit userspace in /usr/lib (there is no /usr/lib32), and a caller may override it.
 HOST_LIBDIR = "/usr/lib"
 HOST_LIBDIR32 = "/usr/lib32"
+
+
+def _elf_class(path):
+    """ELF class of a file as an int (32 or 64), or None when it is not readable/ELF."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(5)
+    except OSError:
+        return None
+    if head[:4] != b"\x7fELF":
+        return None
+    return {1: 32, 2: 64}.get(head[4])
+
+
+def _libdir_with_class(want, *candidates, name=None):
+    """First directory whose `name` blob is an ELF of class `want`.
+
+    The host layout is distribution dependent: Debian and Arch keep the 64-bit NVIDIA userspace in
+    /usr/lib and the 32-bit one in /usr/lib32, while Fedora's multilib keeps them in /usr/lib64 and
+    /usr/lib (it has no /usr/lib32). Picking by ELF class keeps a 64-bit guest from being handed a
+    32-bit blob (and vice versa) whatever the distribution calls its directories.
+    """
+    name = name or BLOBS[0].format(v=driver_version())
+    for directory in candidates:
+        if _elf_class(os.path.join(directory, name)) == want:
+            return directory
+    raise OSError("NVIDIA native mode: no directory in {} holds an ELF{} {} (install the {} userspace)"
+                  .format(", ".join(candidates), want, name, "64-bit" if want == 64 else "32-bit"))
+
+
+def default_host_libdir():
+    """The directory holding the 64-bit NVIDIA userspace (see _libdir_with_class)."""
+    if os.path.isdir("/usr/lib64"):
+        return _libdir_with_class(64, "/usr/lib64", "/usr/lib")
+    return _libdir_with_class(64, "/usr/lib")
+
+
+def default_host_libdir32():
+    """The directory holding the 32-bit NVIDIA userspace (see _libdir_with_class)."""
+    if os.path.isdir("/usr/lib32"):
+        return _libdir_with_class(32, "/usr/lib32", "/usr/lib")
+    return _libdir_with_class(32, "/usr/lib")
+
+
 DEV_DIR = "/dev"
 PROC_VERSION = "/proc/driver/nvidia/version"
 NVIDIA_VENDOR = "0x10de"
@@ -1323,8 +1369,8 @@ def lxc_nodes(root, host_libdir=None, dev=None, existing=(), host_libdir32=None)
     binds the NVIDIA render node (waydroid.cfg drm_device names it, so upstream gpu.py emitted it),
     it is not bound a second time.
     """
-    host_libdir = host_libdir or HOST_LIBDIR
-    host_libdir32 = host_libdir32 or HOST_LIBDIR32
+    host_libdir = host_libdir or default_host_libdir()
+    host_libdir32 = host_libdir32 or default_host_libdir32()
     dev = dev or DEV_DIR
     if os.path.exists(os.path.join(root, SOURCE_RM_MANIFEST)):
         manifest = verify_source_rm(root)

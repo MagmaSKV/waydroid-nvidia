@@ -137,8 +137,27 @@ for pair in "$L:android:lib64" "$L32:android32:lib"; do
         rmdir "$D/egl" 2>/dev/null && echo "removed old $D/egl" || die "$D/egl holds files other than the front; inspect and remove them"
     fi
 done
-# per ABI dir: sidecar, placeholders for the host's blobs, soname link, stale-placeholder sweep
-for pair in "$L:/usr/lib:nvidia-utils" "$L32:/usr/lib32:lib32-nvidia-utils"; do
+# per ABI dir: sidecar, placeholders for the host's blobs, soname link, stale-placeholder sweep.
+# The host layout differs per distribution: Debian and Arch keep the 64-bit NVIDIA userspace in
+# /usr/lib and the 32-bit one in /usr/lib32, Fedora's multilib keeps them in /usr/lib64 and /usr/lib
+# (it has no /usr/lib32). Pick each directory by the ELF class of the driver blob it holds, so a
+# 64-bit guest never gets a 32-bit blob bind-mounted into it.
+# Echo the first directory whose libEGL_nvidia.so.$V is an ELF of the requested class (32 or 64).
+# `readelf -h` prints 'Class: ELF64' / 'Class: ELF32' untranslated under LC_ALL=C.
+libdir_with_class() {
+    local want=$1; shift
+    local d cls
+    for d in "$@"; do
+        [ -f "$d/libEGL_nvidia.so.$V" ] || continue
+        cls=$(LC_ALL=C readelf -h "$d/libEGL_nvidia.so.$V" 2>/dev/null | sed -n 's/^ *Class: *ELF\([0-9]*\).*/\1/p')
+        [ "$cls" = "$want" ] || continue
+        echo "$d"; return 0
+    done
+    return 1
+}
+HOSTDIR64=$(libdir_with_class 64 /usr/lib64 /usr/lib) || die "no directory holds an ELF64 libEGL_nvidia.so.$V"
+HOSTDIR32=$(libdir_with_class 32 /usr/lib32 /usr/lib) || die "no directory holds an ELF32 libEGL_nvidia.so.$V"
+for pair in "$L:$HOSTDIR64:nvidia-utils" "$L32:$HOSTDIR32:nvidia-utils 32-bit"; do
     D=${pair%%:*}; rest=${pair#*:}; HOSTDIR=${rest%%:*}; PKG=${rest#*:}
     printf '%s\n' "$GLIBC" > "$D/host-glibc-version.tmp" && chmod 644 "$D/host-glibc-version.tmp" && mv -f "$D/host-glibc-version.tmp" "$D/host-glibc-version"
     for b in libEGL_nvidia libnvidia-glsi libnvidia-eglcore libnvidia-gpucomp libnvidia-glvkspirv; do

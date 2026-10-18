@@ -54,7 +54,9 @@ def must(path):
 
 
 def elf_check(path, bits):
-    header = subprocess.check_output(['readelf', '-h', str(path)], text=True)
+    # LC_ALL=C: the machine name is compared as the untranslated English string.
+    header = subprocess.check_output(['readelf', '-h', str(path)], text=True,
+                                     env={**os.environ, 'LC_ALL': 'C'})
     machine = 'Advanced Micro Devices X86-64' if bits == 64 else 'Intel 80386'
     if f'ELF{bits}' not in header or machine not in header:
         raise SystemExit(f'build-gate: {path} is not an ELF{bits} {machine} object')

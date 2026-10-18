@@ -53,7 +53,6 @@ bsearch	identical	bsearch	-
 btowc	identical	btowc	-
 calloc	identical	calloc	-
 ceil	identical	ceil	-
-ceilf	identical	ceilf	-
 chdir	identical	chdir	-
 chmod	identical	chmod	-
 chown	identical	chown	-
@@ -220,6 +219,7 @@ pthread_condattr_init	translate	nvg_pthread_condattr_init	-
 pthread_condattr_setclock	translate	nvg_pthread_condattr_setclock	-
 pthread_create	translate	nvg_pthread_create	-
 pthread_detach	identical	pthread_detach	-
+pthread_join	identical	pthread_join	libpthread.so.0
 pthread_equal	identical	pthread_equal	libpthread.so.0
 pthread_exit	identical	pthread_exit	libpthread.so.0
 pthread_getcpuclockid	identical	pthread_getcpuclockid	libpthread.so.0

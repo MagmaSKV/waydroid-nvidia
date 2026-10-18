@@ -17,7 +17,11 @@ ifeq ($(ARCH),x86_64)
 CC          := $(TC)/bin/x86_64-linux-android33-clang
 STUBDIR     := $(TC)/sysroot/usr/lib/x86_64-linux-android/33
 HOSTCC      ?= gcc
-BLOBDIR     ?= /usr/lib
+# 64-bit host libraries live in /usr/lib on Debian and Arch, but in /usr/lib64 on Fedora's
+# multilib layout: pick the directory whose libEGL_nvidia is an ELF64 (the 32-bit branch
+# below does the same for ELF32).
+LIB64       := $(if $(wildcard /usr/lib64/libEGL_nvidia.so.0),/usr/lib64,/usr/lib)
+BLOBDIR     ?= $(LIB64)
 FRONTS := libc.so.6 libm.so.6 libpthread.so.0 librt.so.1 libdl.so.2 ld-linux-x86-64.so.2
 GEN := gen
 OUT := out

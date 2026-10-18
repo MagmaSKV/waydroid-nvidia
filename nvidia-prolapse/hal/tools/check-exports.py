@@ -15,7 +15,9 @@ import sys
 
 
 def readelf(tool, args, path):
-    return subprocess.run([tool] + args + [path], check=True, capture_output=True, text=True).stdout
+    # LC_ALL=C keeps readelf's field names untranslated (the regexes below match English).
+    return subprocess.run([tool] + args + [path], check=True, capture_output=True, text=True,
+                          env={**os.environ, 'LC_ALL': 'C'}).stdout
 
 
 def main():

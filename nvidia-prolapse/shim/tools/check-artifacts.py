@@ -36,8 +36,9 @@ def err(msg):
 
 
 def readelf(tool, args, path):
+    # LC_ALL=C keeps readelf's field names untranslated (the regexes below match English).
     return subprocess.run([tool] + args + [path], check=True, capture_output=True,
-                          text=True).stdout
+                          text=True, env={**os.environ, 'LC_ALL': 'C'}).stdout
 
 
 def dynamic(tool, path):

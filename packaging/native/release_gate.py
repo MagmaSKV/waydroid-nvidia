@@ -103,7 +103,10 @@ def elf_bits(path):
 
 
 def needed(path):
-    dynamic = subprocess.check_output(['readelf', '-dW', str(path)], text=True)
+    # LC_ALL=C: readelf localises its field names ('shared library' under a zh_CN
+    # locale), and the regex only matches the untranslated English form.
+    env = {**os.environ, 'LC_ALL': 'C'}
+    dynamic = subprocess.check_output(['readelf', '-dW', str(path)], text=True, env=env)
     return re.findall(r'\(NEEDED\)\s+Shared library: \[(.+?)\]', dynamic)
 
 
@@ -196,8 +199,17 @@ class Gate:
         env = {'LD_LIBRARY_PATH': ':'.join(map(str, self.libpath(target))), 'DISPLAY': '', 'WAYLAND_DISPLAY': ''}
         command = [str(linker), *map(str, argv)]
         if bits == 32:
-            # i686 bionic's pthread TID field cannot hold large host PIDs: run in a fresh PID namespace
-            command = ['unshare', '--user', '--map-root-user', '--pid', '--fork', *command]
+            # i686 bionic's pthread TID field cannot hold large host PIDs: run in a fresh PID
+            # namespace. A user namespace is only needed to be allowed to create one, and only
+            # for an unprivileged caller: --map-root-user maps the real uid to 0 inside, which
+            # keeps a non-root caller's access to its own tree, but maps a real root to a
+            # capability-less 0 that cannot read files it does not own (the bundle under
+            # /home/<user> then fails with 'permission denied'). Root creates the PID namespace
+            # directly.
+            if os.geteuid() == 0:
+                command = ['unshare', '--pid', '--fork', *command]
+            else:
+                command = ['unshare', '--user', '--map-root-user', '--pid', '--fork', *command]
         return env, command
 
     def run(self, target, name, argv, env_extra=None, markers=(), check_exit=True, judge=None):

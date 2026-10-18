@@ -361,7 +361,9 @@ def stage_sources(rust_profile='dev'):
 
 
 def _needed(path):
-    dynamic = subprocess.check_output(['readelf', '-d', str(path)], text=True)
+    # LC_ALL=C keeps readelf's field names untranslated (the regex below is English).
+    env = {**os.environ, 'LC_ALL': 'C'}
+    dynamic = subprocess.check_output(['readelf', '-d', str(path)], text=True, env=env)
     return re.findall(r'\(NEEDED\)\s+Shared library: \[(.+?)\]', dynamic)
 
 
