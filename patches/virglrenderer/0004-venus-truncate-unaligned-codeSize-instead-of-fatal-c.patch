@@ -1,0 +1,43 @@
+From ed36877b2926353189f97e2fb3efbbdd8a0f9937 Mon Sep 17 00:00:00 2001
+From: ci <ci@waydroid-nvidia>
+Date: Fri, 4 Sep 2026 22:30:29 +0800
+Subject: [PATCH 4/5] venus: truncate unaligned codeSize instead of fatal
+ context kill
+
+---
+ src/venus/vkr_pipeline.c | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/src/venus/vkr_pipeline.c b/src/venus/vkr_pipeline.c
+index 76709b9b..9e8dd26d 100644
+--- a/src/venus/vkr_pipeline.c
++++ b/src/venus/vkr_pipeline.c
+@@ -11,7 +11,6 @@ static void
+ vkr_dispatch_vkCreateShaderModule(struct vn_dispatch_context *dispatch,
+                                   struct vn_command_vkCreateShaderModule *args)
+ {
+-   struct vkr_context *ctx = dispatch->data;
+ 
+    /* Reject invalid codeSize.
+     *
+@@ -37,8 +36,15 @@ vkr_dispatch_vkCreateShaderModule(struct vn_dispatch_context *dispatch,
+     * validating codeSize here.
+     */
+    if (args->pCreateInfo->codeSize % 4 != 0) {
+-      vkr_context_set_fatal(ctx);
+-      return;
++      /* The venus encoder/decoder already transmitted only codeSize & ~3 bytes,
++       * so the driver would read out-of-bounds if we passed the unaligned size.
++       * Truncate to the nearest 4-byte boundary instead of fatally killing the
++       * whole Vulkan context (which broke every subsequent pipeline creation,
++       * causing AnTuTu 3D / Geekbench GPU tests to black-screen or crash). */
++      vkr_log("vkCreateShaderModule: codeSize %zu not 4-byte aligned, truncating to %zu",
++              args->pCreateInfo->codeSize,
++              args->pCreateInfo->codeSize & ~(size_t)3);
++      ((VkShaderModuleCreateInfo *)args->pCreateInfo)->codeSize &= ~(size_t)3;
+    }
+ 
+    vkr_shader_module_create_and_add(dispatch->data, args);
+-- 
+2.55.0
+

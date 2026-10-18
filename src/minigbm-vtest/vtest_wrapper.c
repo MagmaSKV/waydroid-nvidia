@@ -15,6 +15,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -23,6 +24,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -30,6 +32,7 @@
 #include <sys/system_properties.h>
 
 #include "gbm_mesa_wrapper.h"
+#include "vtest_alloc_formats.h"
 
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -43,17 +46,6 @@
 #define VCMD_RESOURCE_ALLOC_GPU_RESP_SIZE 7
 
 #define DEFAULT_SOCKET "/dev/venus/venus.sock"
-
-#define FOURCC(a, b, c, d) \
-   ((uint32_t)(a) | ((uint32_t)(b) << 8) | ((uint32_t)(c) << 16) | ((uint32_t)(d) << 24))
-#define FMT_R8            FOURCC('R', '8', ' ', ' ')
-#define FMT_RGB565        FOURCC('R', 'G', '1', '6')
-#define FMT_XRGB8888      FOURCC('X', 'R', '2', '4')
-#define FMT_ARGB8888      FOURCC('A', 'R', '2', '4')
-#define FMT_XBGR8888      FOURCC('X', 'B', '2', '4')
-#define FMT_ABGR8888      FOURCC('A', 'B', '2', '4')
-#define FMT_ABGR2101010   FOURCC('A', 'B', '3', '0')
-#define FMT_ABGR16161616F FOURCC('A', 'B', '4', 'H')
 
 struct vtest_dev {
    pthread_mutex_t mutex;
@@ -76,8 +68,12 @@ sock_write_all(int fd, const void *buf, size_t len)
       ssize_t n = write(fd, p, len);
       if (n < 0 && errno == EINTR)
          continue;
-      if (n <= 0)
+      if (n < 0)
          return -1;
+      if (n == 0) {
+         errno = EPIPE;
+         return -1;
+      }
       p += n;
       len -= (size_t)n;
    }
@@ -92,8 +88,12 @@ sock_read_all(int fd, void *buf, size_t len)
       ssize_t n = read(fd, p, len);
       if (n < 0 && errno == EINTR)
          continue;
-      if (n <= 0)
+      if (n < 0)
          return -1;
+      if (n == 0) {
+         errno = EPIPE;
+         return -1;
+      }
       p += n;
       len -= (size_t)n;
    }
@@ -119,12 +119,28 @@ sock_recv_fd(int sock)
    if (n <= 0)
       return -1;
 
-   struct cmsghdr *c = CMSG_FIRSTHDR(&msg);
-   if (!c || c->cmsg_level != SOL_SOCKET || c->cmsg_type != SCM_RIGHTS)
+   /* Require exactly one fd. recvmsg() has already installed every fd the
+    * message carried into this process, so a rejection must close them or they
+    * leak for the lifetime of the container. MSG_CTRUNC means the control data
+    * did not fit and any fds beyond the first were dropped by the kernel. */
+   int nfds = 0, fds[8];
+   for (struct cmsghdr *c = CMSG_FIRSTHDR(&msg); c; c = CMSG_NXTHDR(&msg, c)) {
+      if (c->cmsg_level != SOL_SOCKET || c->cmsg_type != SCM_RIGHTS)
+         continue;
+      size_t payload = c->cmsg_len - CMSG_LEN(0);
+      for (size_t off = 0; off + sizeof(int) <= payload; off += sizeof(int)) {
+         if (nfds < (int)(sizeof(fds) / sizeof(fds[0]))) {
+            memcpy(&fds[nfds], CMSG_DATA(c) + off, sizeof(int));
+            nfds++;
+         }
+      }
+   }
+   if ((msg.msg_flags & MSG_CTRUNC) || nfds != 1) {
+      for (int i = 0; i < nfds; i++)
+         close(fds[i]);
       return -1;
-   int fd;
-   memcpy(&fd, CMSG_DATA(c), sizeof(fd));
-   return fd;
+   }
+   return fds[0];
 }
 
 static int
@@ -135,24 +151,65 @@ vtest_connect(void)
       strcpy(path, DEFAULT_SOCKET);
 
    int sock = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-   if (sock < 0)
+   if (sock < 0) {
+      LOGE("socket(AF_UNIX): %s", strerror(errno));
       return -1;
+   }
+
+   /* non-blocking connect + poll(1s) deadline */
+   int orig_flags = fcntl(sock, F_GETFL, 0);
+   if (orig_flags >= 0)
+      fcntl(sock, F_SETFL, orig_flags | O_NONBLOCK);
 
    struct sockaddr_un addr = { .sun_family = AF_UNIX };
    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
-   if (connect(sock, (struct sockaddr *)&addr, sizeof(addr))) {
+   int res = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
+   if (res < 0 && (errno == EINPROGRESS || errno == EWOULDBLOCK)) {
+      struct pollfd pfd = { .fd = sock, .events = POLLOUT };
+      res = poll(&pfd, 1, 1000); /* 1 sec deadline for connection phase */
+      if (res <= 0) {
+         LOGE("connect(%s): connection deadline timed out", path);
+         close(sock);
+         return -1;
+      }
+      int err = 0;
+      socklen_t len = sizeof(err);
+      if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &err, &len) < 0 || err != 0) {
+         LOGE("connect(%s): %s", path, strerror(err ? err : errno));
+         close(sock);
+         return -1;
+      }
+      res = 0;
+   } else if (res < 0) {
       LOGE("connect(%s): %s", path, strerror(errno));
       close(sock);
       return -1;
    }
+
+   /* restore socket flags and configure 1-second read/write I/O timeouts */
+   if (orig_flags >= 0)
+      fcntl(sock, F_SETFL, orig_flags);
+
+   struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
+   setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+   setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
    /* CREATE_RENDERER; the length field is in bytes (strlen+1) */
    const char name[8] = "gralloc";
    const uint32_t hdr[VTEST_HDR_SIZE] = { sizeof(name), VCMD_CREATE_RENDERER };
    if (sock_write_all(sock, hdr, sizeof(hdr)) ||
        sock_write_all(sock, name, sizeof(name))) {
+      LOGE("CREATE_RENDERER write(%s): %s", path, strerror(errno));
       close(sock);
       return -1;
+   }
+
+   {
+      static int logged;
+      if (!logged) {
+         logged = 1;
+         LOGI("connected to %s", path);
+      }
    }
    return sock;
 }
@@ -162,21 +219,13 @@ vtest_connect(void)
 static uint32_t
 vtest_get_gbm_format(uint32_t drm_format)
 {
-   switch (drm_format) {
-   /* formats the host allocator can create as renderable NVIDIA images;
-    * everything else takes minigbm's linear R8-blob path */
-   case FMT_R8:
-   case FMT_RGB565:
-   case FMT_XRGB8888:
-   case FMT_ARGB8888:
-   case FMT_XBGR8888:
-   case FMT_ABGR8888:
-   case FMT_ABGR2101010:
-   case FMT_ABGR16161616F:
+   /* Non-zero = "I can allocate this fourcc". minigbm still sends the
+    * original fourcc to alloc(); returning 0 forces the R8 1D-blob path
+    * that makes ANGLE's YCbCr sampler abort (issue #16, fourcc 0x37393939
+    * = YVU420_ANDROID). YUV aliases are in the shared whitelist. */
+   if (vtest_is_supported_drm_format(drm_format))
       return drm_format;
-   default:
-      return 0;
-   }
+   return 0;
 }
 
 static struct gbm_device *
@@ -199,6 +248,7 @@ vtest_dev_destroy(struct gbm_device *gbm)
    struct vtest_dev *dev = (struct vtest_dev *)gbm;
    if (dev->sock >= 0)
       close(dev->sock);
+   pthread_mutex_destroy(&dev->mutex);
    free(dev);
 }
 
@@ -227,23 +277,60 @@ vtest_alloc(struct alloc_args *args)
          dev->sock = vtest_connect();
       if (dev->sock < 0)
          break;
-      if (sock_write_all(dev->sock, req, sizeof(req)) == 0 &&
-          sock_read_all(dev->sock, resp, sizeof(resp)) == 0)
-         goto have_resp;
-      close(dev->sock);
-      dev->sock = -1;
+      if (sock_write_all(dev->sock, req, sizeof(req)) != 0) {
+         LOGE("alloc %ux%u: ALLOC_GPU write: %s", args->width, args->height,
+              strerror(errno));
+         close(dev->sock);
+         dev->sock = -1;
+         continue;
+      }
+      if (sock_read_all(dev->sock, resp, sizeof(resp)) != 0) {
+         /* Immediate EPIPE = host closed after CREATE_RENDERER. v0.1.1's
+          * host tarball omitted patch 0006, so cmd 41 is
+          * VTEST_CLIENT_ERROR_COMMAND_ID (issue #7). */
+         LOGE("alloc %ux%u: ALLOC_GPU read: %s (host missing cmd 41 / patch 0006?)",
+              args->width, args->height, strerror(errno));
+         close(dev->sock);
+         dev->sock = -1;
+         continue;
+      }
+      goto have_resp;
    }
    pthread_mutex_unlock(&dev->mutex);
    LOGE("alloc: no vtest connection");
    return -ENODEV;
 
 have_resp:;
+   /* Any error below happens *after* the response header was read but before
+    * the SCM_RIGHTS fd is received. Returning here would leave that fd queued
+    * on the socket, and the next vtest_alloc would recvmsg() the stale fd from
+    * this failed request and hand it back as a valid buffer. The stream has no
+    * resync point, so drop the connection instead. */
+   if (resp[1] != VCMD_RESOURCE_ALLOC_GPU) {
+      close(dev->sock);
+      dev->sock = -1;
+      pthread_mutex_unlock(&dev->mutex);
+      LOGE("alloc: unexpected vtest reply cmd %u (want %u)", resp[1],
+           VCMD_RESOURCE_ALLOC_GPU);
+      return -EIO;
+   }
+   if (resp[0] < VCMD_RESOURCE_ALLOC_GPU_RESP_SIZE) {
+      close(dev->sock);
+      dev->sock = -1;
+      pthread_mutex_unlock(&dev->mutex);
+      LOGE("alloc: host payload too short (%u < %u)", resp[0],
+           VCMD_RESOURCE_ALLOC_GPU_RESP_SIZE);
+      return -EIO;
+   }
    const uint32_t *d = &resp[VTEST_HDR_SIZE];
    const uint32_t status = d[0];
    if (status) {
+      close(dev->sock);
+      dev->sock = -1;
       pthread_mutex_unlock(&dev->mutex);
-      LOGE("alloc %ux%u fmt=0x%08x flags=%u failed: host status %u", args->width,
-           args->height, args->drm_format, flags, status);
+      LOGE("alloc %ux%u fmt=%s(0x%08x) flags=%u failed: host status %u", args->width,
+           args->height, vtest_format_name(args->drm_format), args->drm_format,
+           flags, status);
       return -(int)status;
    }
 
@@ -258,6 +345,16 @@ have_resp:;
    args->out_stride = d[1];
    args->out_map_stride = d[2];
    args->out_modifier = d[3] | (uint64_t)d[4] << 32;
+
+   {
+      static int alloc_log_n;
+      int n = alloc_log_n++;
+      if (n < 16 || (n % 128) == 0)
+         LOGI("alloc %ux%u fmt=%s flags=0x%x stride=%u mod=0x%llx (#%d)",
+              args->width, args->height, vtest_format_name(args->drm_format),
+              flags, args->out_stride,
+              (unsigned long long)args->out_modifier, n);
+   }
    return 0;
 }
 
@@ -276,13 +373,13 @@ vtest_import(struct gbm_device *gbm, int buf_fd, uint32_t width, uint32_t height
    if (!bo)
       return NULL;
 
-   const off_t size = lseek(buf_fd, 0, SEEK_END);
-   if (size <= 0) {
+   struct stat st;
+   if (fstat(buf_fd, &st) < 0 || st.st_size <= 0) {
       free(bo);
       return NULL;
    }
    bo->fd = fcntl(buf_fd, F_DUPFD_CLOEXEC, 0);
-   bo->size = (uint64_t)size;
+   bo->size = (uint64_t)st.st_size;
    if (bo->fd < 0) {
       free(bo);
       return NULL;

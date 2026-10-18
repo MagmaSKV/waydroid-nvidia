@@ -103,7 +103,9 @@ do_virgl() {
     say "virgl: fresh $VIRGL_BASE + series -> build virgl_test_server"
     local d; d=$(checkout virgl) || { bad virgl "checkout"; return; }
     git -C "$d" am -q "$REPO"/patches/virglrenderer/000{1,2,3}-*.patch \
-        && git -C "$d" apply "$REPO/patches/virglrenderer/0004-wip-gpu-alloc-and-global-priority.patch" \
+        && git -C "$d" apply "$REPO/patches/virglrenderer/0004-venus-truncate-unaligned-codeSize-instead-of-fatal-c.patch" \
+            "$REPO/patches/virglrenderer/0005-venus-retry-vkCreateDevice-without-virglrenderer-app.patch" \
+            "$REPO/patches/virglrenderer/0006-wip-gpu-alloc-and-global-priority.patch" \
         || { bad virgl "patch apply"; return; }
     if REPO="$REPO" "$REPO/build/virglrenderer/build.sh" "$d" "$d/build"; then
         [ -f "$d/build/vtest/virgl_test_server" ] \

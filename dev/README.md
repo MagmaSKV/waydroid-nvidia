@@ -75,6 +75,6 @@ trailing `wip` patch:
 | Component | BASE | committed → | WIP → |
 |---|---|---|---|
 | mesa | `a8ce4d8` | `0001`,`0002` | `0003-wip-ahb-memory-steering` |
-| virglrenderer | `dc35e4d` | `0001`–`0003` | `0004-wip-gpu-alloc-and-global-priority` + net-new `src/` |
+| virglrenderer | `dc35e4d` | `0001`–`0005` | `0006-wip-gpu-alloc-and-global-priority` + net-new `src/` |
 | hwcomposer | `7750307` | — | `0001-wip-nvidia-fixes` |
 | waydroid | `a33a5c0` | — | `0001-nvidia-integration` |

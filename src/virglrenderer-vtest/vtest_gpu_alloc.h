@@ -1,13 +1,25 @@
 /*
  * Host-side buffer allocator for VCMD_RESOURCE_ALLOC_GPU.
  *
- * GPU path: allocates an exportable linear VkImage + dedicated VkDeviceMemory
- * on the render GPU (NVIDIA) and exports it as a dma_buf.  Buffers born on
- * the compositing GPU are the only ones KWin-on-NVIDIA can bind as
- * GL_TEXTURE_2D (foreign dmabufs bind only as EXTERNAL_OES).
+ * GPU path: exportable VkImage + dedicated VkDeviceMemory on the render GPU
+ * (NVIDIA), exported as a dma_buf.
  *
- * CPU path: memfd + udmabuf, for BO_USE_SW_* gralloc buffers that the guest
- * must mmap; still a real dma_buf so the GPU can sample it.
+ *   Discrete NVIDIA (compositor on NVIDIA): block-linear DRM modifiers.
+ *   NVIDIA EGL binds LINEAR only as GL_TEXTURE_EXTERNAL_OES; KWin needs
+ *   GL_TEXTURE_2D, which block-linear provides.
+ *
+ *   Hybrid (iGPU compositor + NVIDIA render): NVIDIA LINEAR, sysmem-first.
+ *   Intel/AMD import LINEAR dma_bufs as GL_TEXTURE_2D (tests/crossimport.c)
+ *   but cannot sample dGPU VRAM (issue #7: black screen on RTD3 hybrids),
+ *   so the allocator prefers a HOST_VISIBLE|HOST_COHERENT placement; VRAM
+ *   is only a fallback. NVIDIA block-linear is not advertised by the iGPU
+ *   compositor.
+ *   Auto-detected from DRM connectors / boot_vga; override with
+ *   WAYDROID_NVIDIA_PRESENT=linear|block-linear|udmabuf (udmabuf = kernel
+ *   fallback, no NVIDIA allocation, both paths).
+ *
+ * CPU path: NVIDIA LINEAR (host-visible) first, udmabuf fallback, for
+ * BO_USE_SW_* gralloc buffers the guest must mmap.
  */
 
 #ifndef VTEST_GPU_ALLOC_H
@@ -22,5 +34,10 @@ int vtest_gpu_alloc_gpu(uint32_t width, uint32_t height, uint32_t drm_format,
 
 int vtest_gpu_alloc_cpu(uint32_t width, uint32_t height, uint32_t drm_format,
                         uint32_t *out_stride, uint64_t *out_size, int *out_fd);
+
+/* Record the VCMD_ALLOC_GPU flags for the allocation about to be made, so the
+ * optional WDRDIAG_ALLOC_TRACE stream can attribute each allocation to the
+ * guest's actual request. Call from the vtest command handler. */
+void vtest_gpu_alloc_set_flags(uint32_t flags);
 
 #endif /* VTEST_GPU_ALLOC_H */

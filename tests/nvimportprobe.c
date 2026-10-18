@@ -4,7 +4,7 @@
 // host driver, no venus/server needed:
 //
 //   allocate VkImage (block-linear or LINEAR modifier, gralloc-style usage)
-//   -> export dma_buf (vkGetMemoryFdKHR)          [requires open kernel module]
+//   -> export dma_buf (vkGetMemoryFdKHR)
 //   -> vkGetMemoryFdPropertiesKHR                  (print memoryTypeBits mask)
 //   -> re-create image with ANGLE's usage set (with/without INPUT_ATTACHMENT)
 //   -> dedicated-import the dma_buf into EVERY type in the mask, bind
@@ -12,8 +12,9 @@
 //
 // The 5090/610.172 baseline: block-linear imports into type 0 with
 // INPUT_ATTACHMENT succeed; LINEAR + INPUT_ATTACHMENT fails (worked around
-// in guest mesa). Run this on other GPU generations to see which
-// combination their driver rejects.
+// in guest mesa for both AHB imports and VK_ANDROID_native_buffer swapchain
+// images — issue #7 SystemUI abort). Run this on other GPU generations to
+// see which combination their driver rejects.
 //
 // Build:  gcc -O1 -o nvimportprobe nvimportprobe.c -ldl
 // Run:    ./nvimportprobe            (picks the first NVIDIA device)
@@ -56,7 +57,7 @@ static const char *rstr(VkResult r) {
         return "INVALID_DRM_MODIFIER_LAYOUT";
     case VK_ERROR_INITIALIZATION_FAILED: return "INITIALIZATION_FAILED";
     default: {
-        static char buf[32];
+        static __thread char buf[32];
         snprintf(buf, sizeof(buf), "VkResult(%d)", r);
         return buf;
     }}
@@ -90,6 +91,7 @@ int main(void) {
     IPROC(inst, vkGetPhysicalDeviceFormatProperties2);
     IPROC(inst, vkGetPhysicalDeviceImageFormatProperties2);
     IPROC(inst, vkGetPhysicalDeviceQueueFamilyProperties);
+    (void)vkGetPhysicalDeviceQueueFamilyProperties;
     IPROC(inst, vkCreateDevice);
     gdpa = (PFN_vkGetDeviceProcAddr)gipa(inst, "vkGetDeviceProcAddr");
 
@@ -134,6 +136,13 @@ int main(void) {
     modlist.pDrmFormatModifierProperties = mods;
     vkGetPhysicalDeviceFormatProperties2(pd, FMT, &fp2);
     printf("modifiers advertised: %u\n", modlist.drmFormatModifierCount);
+
+    IPROC(inst, vkGetPhysicalDeviceFeatures);
+    VkPhysicalDeviceFeatures feats;
+    vkGetPhysicalDeviceFeatures(pd, &feats);
+    printf("host feature textureCompressionETC2: %s (Venus %s compute shader emulation)\n",
+           feats.textureCompressionETC2 ? "YES" : "NO",
+           feats.textureCompressionETC2 ? "unneeded" : "requires");
 
     const char *want_exts[] = {
         "VK_KHR_external_memory_fd", "VK_EXT_external_memory_dma_buf",
