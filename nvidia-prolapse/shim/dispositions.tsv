@@ -17,7 +17,6 @@ __lxstat64	translate	nvg___lxstat64	-
 __newlocale	translate	nvg___newlocale	-
 __nl_langinfo_l	translate	nvg___nl_langinfo_l	-
 __pthread_key_create	translate (weak)	pthread_key_create	-
-__sched_cpucount	identical	__sched_cpucount	-
 __strcoll_l	translate	strcoll_l	-
 __strftime_l	translate	strftime_l	-
 __strtod_l	translate	strtod_l	-
@@ -86,7 +85,6 @@ exp	identical	exp	-
 exp2	identical	exp2	-
 expf	identical	expf	-
 fabs	identical	fabs	-
-faccessat	identical	faccessat	-
 fallocate64	identical	fallocate64	-
 fclose	identical	fclose	-
 fcntl	identical	fcntl	-
@@ -99,7 +97,6 @@ fflush	identical	fflush	-
 fgets	identical	fgets	-
 fileno	identical	fileno	-
 finite	identical	finite	-
-flock	identical	flock	-
 floor	identical	floor	-
 floorf	identical	floorf	-
 fmax	identical	fmax	-
@@ -124,7 +121,6 @@ ftello64	identical	ftello64	-
 ftruncate	identical	ftruncate	-
 ftruncate64	identical	ftruncate64	-
 fwrite	identical	fwrite	-
-get_nprocs	identical	get_nprocs	-
 getc	identical	getc	-
 getcwd	identical	getcwd	-
 getegid	identical	getegid	-
@@ -151,7 +147,6 @@ isalnum	identical	isalnum	-
 isalpha	identical	isalpha	-
 isatty	identical	isatty	-
 islower	identical	islower	-
-isprint	identical	isprint	-
 isspace	identical	isspace	-
 isupper	identical	isupper	-
 iswalpha	identical	iswalpha	-
@@ -198,7 +193,6 @@ nanosleep	identical	nanosleep	-
 open	identical	open	-
 open64	identical	open64	-
 openat	identical	openat	-
-openat64	identical	openat64	-
 opendir	identical	opendir	-
 pipe	identical	pipe	-
 pipe2	identical	pipe2	-
@@ -215,9 +209,6 @@ pow	identical	pow	-
 powf	identical	powf	-
 ppoll	identical	ppoll	-
 printf	identical	printf	-
-pthread_attr_destroy	identical	pthread_attr_destroy	-
-pthread_attr_init	translate	nvg_pthread_attr_init	-
-pthread_attr_setstacksize	identical	pthread_attr_setstacksize	-
 pthread_cond_broadcast	identical (weak)	pthread_cond_broadcast	-
 pthread_cond_destroy	identical (weak)	pthread_cond_destroy	-
 pthread_cond_init	translate	nvg_pthread_cond_init	-
@@ -233,7 +224,6 @@ pthread_equal	identical	pthread_equal	libpthread.so.0
 pthread_exit	identical	pthread_exit	libpthread.so.0
 pthread_getcpuclockid	identical	pthread_getcpuclockid	libpthread.so.0
 pthread_getspecific	identical	pthread_getspecific	-
-pthread_join	identical (weak)	pthread_join	-
 pthread_key_create	identical	pthread_key_create	-
 pthread_key_delete	identical	pthread_key_delete	-
 pthread_mutex_destroy	translate	nvg_pthread_mutex_destroy	-
@@ -356,8 +346,6 @@ tanh	identical	tanh	-
 time	identical	time	-
 tolower	identical	tolower	-
 toupper	identical	toupper	-
-trunc	identical	trunc	-
-truncf	identical	truncf	-
 uname	identical	uname	-
 ungetc	identical	ungetc	-
 ungetwc	identical	ungetwc	-
@@ -382,3 +370,8 @@ wmemmove	identical	wmemmove	-
 wmemset	identical	wmemset	-
 write	identical	write	-
 writev	identical	writev	-
+dup3	identical	dup3	-
+__isnan	identical	__isnan	-
+__isinf	identical	__isinf	-
+__getdelim	identical	getdelim	-
+fscanf	identical	fscanf	-

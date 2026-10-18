@@ -188,7 +188,7 @@ static int attr_init_glibc(pthread_attr_t *attr) {
     return 0;
 }
 
-NVG_EXPORT int nvg_pthread_attr_init(pthread_attr_t *attr) {
+int nvg_pthread_attr_init(pthread_attr_t *attr) {
     return attr_init_glibc(attr);
 }
 

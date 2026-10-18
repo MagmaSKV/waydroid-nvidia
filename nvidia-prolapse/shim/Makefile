@@ -27,7 +27,10 @@ else ifeq ($(ARCH),x86)
 CC          := $(TC)/bin/i686-linux-android33-clang
 STUBDIR     := $(TC)/sysroot/usr/lib/i686-linux-android/33
 HOSTCC      ?= gcc -m32
-BLOBDIR     ?= /usr/lib32
+# 32-bit host libraries live in /usr/lib32 on Debian and Arch, but in /usr/lib on
+# Fedora's multilib layout (there is no /usr/lib32 there). Use whichever exists.
+LIB32       := $(if $(wildcard /usr/lib32/libEGL_nvidia.so.0),/usr/lib32,/usr/lib)
+BLOBDIR     ?= $(LIB32)
 FRONTS := libc.so.6 libm.so.6 libpthread.so.0 librt.so.1 libdl.so.2 ld-linux.so.2
 GEN := gen32
 OUT := out32

@@ -31,8 +31,11 @@ BLD      := $(TOP)/build/libdrm/build-android33-x86
 OUT      := $(HERE)/out32
 CROSS    := $(HERE)/x86-android33.ini
 TRIPLE   := i686-linux-android33
-BLOBDIR  ?= /usr/lib32
-HOSTDRM  ?= /usr/lib32/libdrm.so.2
+# 32-bit host libraries live in /usr/lib32 on Debian and Arch, but in /usr/lib on
+# Fedora's multilib layout (there is no /usr/lib32 there). Use whichever exists.
+LIB32    := $(if $(wildcard /usr/lib32/libdrm.so.2),/usr/lib32,/usr/lib)
+BLOBDIR  ?= $(LIB32)
+HOSTDRM  ?= $(LIB32)/libdrm.so.2
 else
 $(error ARCH must be x86_64 or x86, not '$(ARCH)')
 endif
