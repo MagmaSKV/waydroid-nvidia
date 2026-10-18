@@ -31,6 +31,8 @@ std::vector<CodecEntry> supported_codecs(NvVideoDevice *dev, std::string *error)
             return {};
         }
         if (!c.supported)
+            fprintf(stderr, "CODEC 0x%x: supported=false, max=%ux%u, min=%ux%u, bit_depth=0x%x\n",
+                    e.first, c.max_width, c.max_height, c.min_width, c.min_height, c.bit_depth_mask);
             continue;
         if (!c.max_width || !c.max_height || c.min_width > c.max_width || c.min_height > c.max_height ||
             !(c.bit_depth_mask & (1u << 8))) {
